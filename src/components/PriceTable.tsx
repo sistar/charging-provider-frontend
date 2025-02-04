@@ -16,6 +16,24 @@ const fetchPrices = async (): Promise<PriceEntry[]> => {
   return data;
 };
 
+// Group prices by country & provider
+const groupByProvider = (prices: PriceEntry[]) => {
+  const grouped: Record<string, { country: string; provider: string; models: PriceEntry[] }> = {};
+
+  prices.forEach((entry) => {
+    const key = `${entry.country}-${entry.provider}`;
+    if (!grouped[key]) {
+      grouped[key] = { country: entry.country, provider: entry.provider, models: [] };
+    }
+    if (grouped[key].models.length < 4) {
+      // Limit to 4 models per row
+      grouped[key].models.push(entry);
+    }
+  });
+
+  return Object.values(grouped);
+};
+
 const PriceTable: React.FC = () => {
   const { data, error, isLoading } = useQuery({
     queryKey: ["prices"],
@@ -24,6 +42,8 @@ const PriceTable: React.FC = () => {
 
   if (isLoading) return <p className="text-center">Loading prices...</p>;
   if (error) return <p className="text-center text-red-500">Error loading data</p>;
+
+  const groupedData = groupByProvider(data || []);
 
   return (
     <div className="container mx-auto p-4">
@@ -34,26 +54,25 @@ const PriceTable: React.FC = () => {
             <tr className="bg-gray-200">
               <th className="border p-2">Country</th>
               <th className="border p-2">Provider</th>
-              <th className="border p-2">Pricing Model</th>
-              <th className="border p-2">Price per kWh</th>
-              <th className="border p-2">Subscription Price</th>
+              <th className="border p-2" colSpan={4}>Pricing Models</th>
             </tr>
           </thead>
           <tbody>
-            {data?.map((entry) => (
-              <tr key={entry._id} className="border">
-                <td className="border p-2">{entry.country}</td>
-                <td className="border p-2">{entry.provider}</td>
-                <td className="border p-2">{entry.pricing_model_name}</td>
-                <td className="border p-2">
-                  {entry.currency}
-                  {entry.price_kWh.toFixed(2)}
-                </td>
-                <td className="border p-2">
-                  {entry.subscription_price
-                    ? `${entry.currency}${entry.subscription_price.toFixed(2)}`
-                    : "N/A"}
-                </td>
+            {groupedData.map(({ country, provider, models }) => (
+              <tr key={`${country}-${provider}`} className="border">
+                <td className="border p-2">{country}</td>
+                <td className="border p-2">{provider}</td>
+                {models.map((model) => (
+                  <td key={model._id} className="border p-2">
+                    <strong>{model.pricing_model_name}</strong> <br />
+                    {model.currency}{model.price_kWh.toFixed(2)} / kWh <br />
+                    {model.subscription_price ? `${model.currency}${model.subscription_price.toFixed(2)}/month` : "N/A"}
+                  </td>
+                ))}
+                {/* Fill empty cells if less than 4 models */}
+                {Array.from({ length: 4 - models.length }).map((_, index) => (
+                  <td key={`empty-${index}`} className="border p-2 text-gray-400">N/A</td>
+                ))}
               </tr>
             ))}
           </tbody>
