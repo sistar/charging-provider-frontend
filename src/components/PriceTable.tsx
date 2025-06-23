@@ -11,9 +11,26 @@ interface PriceEntry {
   subscription_price?: number;
 }
 
+interface ExchangeRates {
+  [key: string]: number;
+}
+
 const fetchPrices = async (): Promise<PriceEntry[]> => {
   const { data } = await axios.get("https://charging-provider-backend.onrender.com/api/prices");
   return data;
+};
+
+const fetchExchangeRates = async (): Promise<ExchangeRates> => {
+  const { data } = await axios.get("https://api.exchangerate-api.com/v4/latest/EUR");
+  return data.rates;
+};
+
+// Convert price to EUR if not already in EUR
+const convertToEUR = (price: number, currency: string, rates: ExchangeRates): number => {
+  if (currency === "EUR") return price;
+  const rate = rates[currency];
+  if (!rate) return price; // Fallback if rate not available
+  return price / rate;
 };
 
 // Group prices by country & provider
@@ -35,15 +52,20 @@ const groupByProvider = (prices: PriceEntry[]) => {
 };
 
 const PriceTable: React.FC = () => {
-  const { data, error, isLoading } = useQuery({
+  const { data: pricesData, error: pricesError, isLoading: pricesLoading } = useQuery({
     queryKey: ["prices"],
     queryFn: fetchPrices,
   });
 
-  if (isLoading) return <p className="text-center">Loading prices...</p>;
-  if (error) return <p className="text-center text-red-500">Error loading data</p>;
+  const { data: exchangeRates, error: ratesError, isLoading: ratesLoading } = useQuery({
+    queryKey: ["exchangeRates"],
+    queryFn: fetchExchangeRates,
+  });
 
-  const groupedData = groupByProvider(data || []);
+  if (pricesLoading || ratesLoading) return <p className="text-center">Loading prices...</p>;
+  if (pricesError || ratesError) return <p className="text-center text-red-500">Error loading data</p>;
+
+  const groupedData = groupByProvider(pricesData || []);
 
   return (
     <div className="container mx-auto p-4">
@@ -62,13 +84,38 @@ const PriceTable: React.FC = () => {
               <tr key={`${country}-${provider}`} className="border">
                 <td className="border p-2">{country}</td>
                 <td className="border p-2">{provider}</td>
-                {models.map((model) => (
-                  <td key={model._id} className="border p-2">
-                    <strong>{model.pricing_model_name}</strong> <br />
-                    {model.currency}{model.price_kWh.toFixed(2)} / kWh <br />
-                    {model.subscription_price ? `${model.currency}${model.subscription_price.toFixed(2)}/month` : "N/A"}
-                  </td>
-                ))}
+                {models.map((model) => {
+                  const priceInEUR = exchangeRates ? convertToEUR(model.price_kWh, model.currency, exchangeRates).toFixed(2) : null;
+                  const subscriptionInEUR = model.subscription_price && exchangeRates 
+                    ? convertToEUR(model.subscription_price, model.currency, exchangeRates).toFixed(2) 
+                    : null;
+                  
+                  return (
+                    <td key={model._id} className="border p-2">
+                      <strong>{model.pricing_model_name}</strong> <br />
+                      <div className="text-sm">
+                        {model.currency}{model.price_kWh.toFixed(2)} / kWh
+                        {model.currency !== "EUR" && priceInEUR && (
+                          <span className="text-gray-600 block">
+                            (€{priceInEUR} / kWh)
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm mt-1">
+                        {model.subscription_price ? (
+                          <>
+                            {model.currency}{model.subscription_price.toFixed(2)}/month
+                            {model.currency !== "EUR" && subscriptionInEUR && (
+                              <span className="text-gray-600 block">
+                                (€{subscriptionInEUR}/month)
+                              </span>
+                            )}
+                          </>
+                        ) : "N/A"}
+                      </div>
+                    </td>
+                  );
+                })}
                 {/* Fill empty cells if less than 4 models */}
                 {Array.from({ length: 4 - models.length }).map((_, index) => (
                   <td key={`empty-${index}`} className="border p-2 text-gray-400">N/A</td>
