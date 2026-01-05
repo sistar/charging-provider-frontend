@@ -41,8 +41,28 @@ const fetchExchangeRates = async (): Promise<ExchangeRates> => {
 const fetchHouseholdPrices = async (): Promise<HouseholdPrice[]> => {
   const { data } = await axios.get("/nrg_pc_204_page_linear.csv");
 
-  // Parse CSV (skip header row)
-  const lines = data.split('\n').slice(1);
+  // Parse CSV - handle quoted fields properly
+  const parseCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
+  const lines = data.split('\n').slice(1); // Skip header
   const prices: HouseholdPrice[] = [];
 
   // Country name mapping from CSV to our charging data
@@ -54,11 +74,11 @@ const fetchHouseholdPrices = async (): Promise<HouseholdPrice[]> => {
   for (const line of lines) {
     if (!line.trim()) continue;
 
-    const columns = line.split(',');
+    const columns = parseCSVLine(line);
     if (columns.length < 11) continue;
 
-    let country = columns[8].trim();
-    const priceStr = columns[10].trim();
+    let country = columns[8];
+    const priceStr = columns[10];
 
     // Skip aggregated regions
     if (country.includes('Euro area') || country.includes('European Union')) continue;
