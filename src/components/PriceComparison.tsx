@@ -83,6 +83,16 @@ const PriceComparison: React.FC = () => {
   const maxPrice = Math.max(...power365Prices.map(p => p.priceEUR));
   const priceRange = maxPrice - minPrice;
 
+  // Group countries by price (rounded to 2 decimals)
+  const priceGroups = power365Prices.reduce((groups, item) => {
+    const roundedPrice = item.priceEUR.toFixed(2);
+    if (!groups[roundedPrice]) {
+      groups[roundedPrice] = [];
+    }
+    groups[roundedPrice].push(item);
+    return groups;
+  }, {} as Record<string, CountryPrice[]>);
+
   return (
     <div className="bg-white rounded-2xl shadow-xl p-8 mb-12 border border-gray-100">
       <div className="mb-8">
@@ -96,62 +106,72 @@ const PriceComparison: React.FC = () => {
              style={{ top: '50%', transform: 'translateY(-50%)' }}></div>
 
         {/* Country markers */}
-        <div className="relative" style={{ height: '200px' }}>
-          {power365Prices.map((item, index) => {
-            const position = ((item.priceEUR - minPrice) / priceRange) * 100;
-            const isEven = index % 2 === 0;
+        <div className="relative" style={{ minHeight: '300px' }}>
+          {Object.entries(priceGroups).map(([priceStr, countries], groupIndex) => {
+            const price = parseFloat(priceStr);
+            const position = ((price - minPrice) / priceRange) * 100;
+            const isEven = groupIndex % 2 === 0;
+            const groupSize = countries.length;
 
-            return (
-              <div
-                key={item.country}
-                className="absolute"
-                style={{
-                  left: `${position}%`,
-                  top: isEven ? '40%' : '60%',
-                  transform: 'translateX(-50%)'
-                }}
-              >
-                {/* Connector line */}
-                <div
-                  className="absolute w-px bg-gray-400"
-                  style={{
-                    left: '50%',
-                    height: isEven ? '60px' : '60px',
-                    top: isEven ? '0' : '-60px',
-                  }}
-                ></div>
+            return countries.map((item, countryIndex) => {
+              // Stack countries vertically when they share the same price
+              const stackOffset = (countryIndex - (groupSize - 1) / 2) * 30;
 
-                {/* Price point */}
+              return (
                 <div
-                  className="absolute w-4 h-4 bg-blue-600 rounded-full border-2 border-white shadow-lg"
+                  key={item.country}
+                  className="absolute"
                   style={{
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    top: isEven ? '60px' : '-60px',
-                    zIndex: 10
-                  }}
-                ></div>
-
-                {/* Country label */}
-                <div
-                  className="absolute whitespace-nowrap text-center"
-                  style={{
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    top: isEven ? '75px' : '-95px',
-                    width: '120px'
+                    left: `${position}%`,
+                    top: '50%',
+                    transform: 'translateX(-50%)'
                   }}
                 >
-                  <div className="text-sm font-semibold text-gray-900">{item.country}</div>
-                  <div className="text-lg font-bold text-blue-600">€{item.priceEUR.toFixed(2)}</div>
-                  {item.currency !== "€" && (
-                    <div className="text-xs text-gray-500">
-                      {item.currency}{item.originalPrice.toFixed(2)}
-                    </div>
-                  )}
+                  {/* Connector line */}
+                  <div
+                    className="absolute w-px bg-gray-400"
+                    style={{
+                      left: '50%',
+                      height: Math.abs(stackOffset) + 80,
+                      top: stackOffset < 0 ? stackOffset - 80 : 0,
+                      transform: 'translateX(-50%)'
+                    }}
+                  ></div>
+
+                  {/* Price point on the line */}
+                  <div
+                    className="absolute w-4 h-4 bg-blue-600 rounded-full border-2 border-white shadow-lg"
+                    style={{
+                      left: '50%',
+                      top: '0',
+                      transform: 'translate(-50%, -50%)',
+                      zIndex: 10
+                    }}
+                  ></div>
+
+                  {/* Country label - stacked vertically */}
+                  <div
+                    className="absolute whitespace-nowrap"
+                    style={{
+                      left: isEven ? '100%' : 'auto',
+                      right: isEven ? 'auto' : '100%',
+                      top: `${stackOffset - 10}px`,
+                      paddingLeft: isEven ? '12px' : '0',
+                      paddingRight: isEven ? '0' : '12px',
+                      textAlign: isEven ? 'left' : 'right'
+                    }}
+                  >
+                    <div className="text-sm font-semibold text-gray-900">{item.country}</div>
+                    <div className="text-base font-bold text-blue-600">€{item.priceEUR.toFixed(2)}</div>
+                    {item.currency !== "€" && (
+                      <div className="text-xs text-gray-500">
+                        {item.currency}{item.originalPrice.toFixed(2)}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
+              );
+            });
           })}
         </div>
 
