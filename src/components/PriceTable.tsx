@@ -79,20 +79,9 @@ const PriceTable: React.FC = () => {
   const groupedData = groupByProvider(pricesData || []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
-      <div className="max-w-7xl mx-auto">
-        {/* Header Section */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-            Charging Prices
-          </h1>
-          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-            Compare electric vehicle charging prices across Europe. All non-EUR prices include EUR conversion for easy comparison.
-          </p>
-        </div>
-
-        {/* Cards Grid */}
-        <div className="grid gap-8 md:gap-12">
+    <>
+      {/* Cards Grid */}
+      <div className="grid gap-8 md:gap-12">
           {groupedData.map(({ country, provider, models }) => (
             <div key={`${country}-${provider}`} className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 hover:shadow-2xl transition-all duration-300">
               {/* Card Header */}
@@ -198,16 +187,15 @@ const PriceTable: React.FC = () => {
               </div>
             </div>
           ))}
-        </div>
-
-        {/* Footer */}
-        <div className="text-center mt-12 pt-8 border-t border-gray-200">
-          <p className="text-gray-600">
-            Prices are updated in real-time. Currency conversions are approximate and for comparison purposes only.
-          </p>
-        </div>
       </div>
-    </div>
+
+      {/* Footer */}
+      <div className="text-center mt-12 pt-8 border-t border-gray-200">
+        <p className="text-gray-600">
+          Prices are updated in real-time. Currency conversions are approximate and for comparison purposes only.
+        </p>
+      </div>
+    </>
   );
 };
 
