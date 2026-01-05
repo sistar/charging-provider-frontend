@@ -35,7 +35,8 @@ const convertToEUR = (price: number, currency: string, rates: ExchangeRates): nu
   const currencyMap: { [key: string]: string } = {
     "£": "GBP",
     "$": "USD",
-    "€": "EUR"
+    "€": "EUR",
+    "kr": "SEK"  // Swedish Krona
   };
   
   const currencyCode = currencyMap[cleanCurrency] || cleanCurrency.toUpperCase();
