@@ -100,22 +100,25 @@ const PriceComparison: React.FC = () => {
         <p className="text-gray-600">Per kWh pricing across Europe (converted to EUR)</p>
       </div>
 
-      <div className="relative pt-12 pb-8">
+      <div className="relative py-16">
         {/* Price axis line */}
         <div className="absolute left-0 right-0 h-2 bg-gradient-to-r from-green-400 via-yellow-400 to-red-400 rounded-full"
              style={{ top: '50%', transform: 'translateY(-50%)' }}></div>
 
         {/* Country markers */}
-        <div className="relative" style={{ minHeight: '300px' }}>
+        <div className="relative" style={{ minHeight: '400px' }}>
           {Object.entries(priceGroups).map(([priceStr, countries], groupIndex) => {
             const price = parseFloat(priceStr);
             const position = ((price - minPrice) / priceRange) * 100;
-            const isEven = groupIndex % 2 === 0;
-            const groupSize = countries.length;
 
             return countries.map((item, countryIndex) => {
-              // Stack countries vertically when they share the same price
-              const stackOffset = (countryIndex - (groupSize - 1) / 2) * 30;
+              // Alternate groups above and below the line
+              const isAbove = groupIndex % 2 === 0;
+              // Base offset from the line (100px above or below)
+              const baseOffset = isAbove ? -100 : 100;
+              // Additional stacking offset within the group (50px per country)
+              const stackOffset = countryIndex * 50;
+              const totalOffset = baseOffset + (isAbove ? -stackOffset : stackOffset);
 
               return (
                 <div
@@ -129,18 +132,18 @@ const PriceComparison: React.FC = () => {
                 >
                   {/* Connector line */}
                   <div
-                    className="absolute w-px bg-gray-400"
+                    className="absolute w-px bg-gray-300"
                     style={{
                       left: '50%',
-                      height: Math.abs(stackOffset) + 80,
-                      top: stackOffset < 0 ? stackOffset - 80 : 0,
+                      height: Math.abs(totalOffset),
+                      top: isAbove ? totalOffset : 0,
                       transform: 'translateX(-50%)'
                     }}
                   ></div>
 
                   {/* Price point on the line */}
                   <div
-                    className="absolute w-4 h-4 bg-blue-600 rounded-full border-2 border-white shadow-lg"
+                    className="absolute w-3 h-3 bg-blue-600 rounded-full border-2 border-white shadow-md"
                     style={{
                       left: '50%',
                       top: '0',
@@ -149,22 +152,20 @@ const PriceComparison: React.FC = () => {
                     }}
                   ></div>
 
-                  {/* Country label - stacked vertically */}
+                  {/* Country label - positioned at end of connector line */}
                   <div
-                    className="absolute whitespace-nowrap"
+                    className="absolute whitespace-nowrap text-center"
                     style={{
-                      left: isEven ? '100%' : 'auto',
-                      right: isEven ? 'auto' : '100%',
-                      top: `${stackOffset - 10}px`,
-                      paddingLeft: isEven ? '12px' : '0',
-                      paddingRight: isEven ? '0' : '12px',
-                      textAlign: isEven ? 'left' : 'right'
+                      left: '50%',
+                      top: `${totalOffset}px`,
+                      transform: 'translate(-50%, -50%)',
+                      width: '110px'
                     }}
                   >
-                    <div className="text-sm font-semibold text-gray-900">{item.country}</div>
-                    <div className="text-base font-bold text-blue-600">€{item.priceEUR.toFixed(2)}</div>
+                    <div className="text-xs font-semibold text-gray-900 mb-0.5">{item.country}</div>
+                    <div className="text-sm font-bold text-blue-600">€{item.priceEUR.toFixed(2)}</div>
                     {item.currency !== "€" && (
-                      <div className="text-xs text-gray-500">
+                      <div className="text-[10px] text-gray-500">
                         {item.currency}{item.originalPrice.toFixed(2)}
                       </div>
                     )}
