@@ -83,6 +83,12 @@ const PriceComparison: React.FC = () => {
   const maxPrice = Math.max(...power365Prices.map(p => p.priceEUR));
   const priceRange = maxPrice - minPrice;
 
+  // Add 8% padding on each side so min/max prices aren't at the edges
+  const padding = priceRange * 0.08;
+  const paddedMin = minPrice - padding;
+  const paddedMax = maxPrice + padding;
+  const paddedRange = paddedMax - paddedMin;
+
   // Group countries by price (rounded to 2 decimals)
   const priceGroups = power365Prices.reduce((groups, item) => {
     const roundedPrice = item.priceEUR.toFixed(2);
@@ -109,7 +115,7 @@ const PriceComparison: React.FC = () => {
         <div className="relative" style={{ minHeight: '400px' }}>
           {Object.entries(priceGroups).map(([priceStr, countries], groupIndex) => {
             const price = parseFloat(priceStr);
-            const position = ((price - minPrice) / priceRange) * 100;
+            const position = ((price - paddedMin) / paddedRange) * 100;
 
             return countries.map((item, countryIndex) => {
               // Alternate groups above and below the line
@@ -143,12 +149,13 @@ const PriceComparison: React.FC = () => {
 
                   {/* Price point on the line */}
                   <div
-                    className="absolute w-3 h-3 bg-blue-600 rounded-full border-2 border-white shadow-md"
+                    className="absolute w-4 h-4 bg-blue-600 rounded-full shadow-md"
                     style={{
                       left: '50%',
                       top: '0',
                       transform: 'translate(-50%, -50%)',
-                      zIndex: 10
+                      zIndex: 10,
+                      border: '2px solid white'
                     }}
                   ></div>
 
