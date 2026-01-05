@@ -8,7 +8,8 @@ interface PriceEntry {
   provider: string;
   pricing_model_name: string;
   price_kWh: number;
-  subscription_price?: number;
+  monthly_subscription_price?: number | null;
+  yearly_subscription_price?: number | null;
 }
 
 interface ExchangeRates {
@@ -27,8 +28,18 @@ const fetchExchangeRates = async (): Promise<ExchangeRates> => {
 
 // Convert price to EUR if not already in EUR
 const convertToEUR = (price: number, currency: string, rates: ExchangeRates): number => {
-  if (currency === "EUR") return price;
-  const rate = rates[currency];
+  const cleanCurrency = currency.trim();
+  if (cleanCurrency === "€" || cleanCurrency.toUpperCase() === "EUR") return price;
+  
+  // Map currency symbols to codes for exchange rate lookup
+  const currencyMap: { [key: string]: string } = {
+    "£": "GBP",
+    "$": "USD",
+    "€": "EUR"
+  };
+  
+  const currencyCode = currencyMap[cleanCurrency] || cleanCurrency.toUpperCase();
+  const rate = rates[currencyCode];
   if (!rate) return price; // Fallback if rate not available
   return price / rate;
 };
@@ -68,62 +79,133 @@ const PriceTable: React.FC = () => {
   const groupedData = groupByProvider(pricesData || []);
 
   return (
-    <div className="container mx-auto p-4">
-      <h2 className="text-xl font-semibold mb-4 text-center">Charging Prices</h2>
-      <div className="overflow-x-auto">
-        <table className="table-auto w-full border-collapse border border-gray-300">
-          <thead>
-            <tr className="bg-gray-200">
-              <th className="border p-2">Country</th>
-              <th className="border p-2">Provider</th>
-              <th className="border p-2" colSpan={4}>Pricing Models</th>
-            </tr>
-          </thead>
-          <tbody>
-            {groupedData.map(({ country, provider, models }) => (
-              <tr key={`${country}-${provider}`} className="border">
-                <td className="border p-2">{country}</td>
-                <td className="border p-2">{provider}</td>
-                {models.map((model) => {
-                  const priceInEUR = exchangeRates ? convertToEUR(model.price_kWh, model.currency, exchangeRates).toFixed(2) : null;
-                  const subscriptionInEUR = model.subscription_price && exchangeRates 
-                    ? convertToEUR(model.subscription_price, model.currency, exchangeRates).toFixed(2) 
-                    : null;
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
+      <div className="max-w-7xl mx-auto">
+        {/* Header Section */}
+        <div className="text-center mb-12">
+          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
+            Charging Prices
+          </h1>
+          <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+            Compare electric vehicle charging prices across Europe. All non-EUR prices include EUR conversion for easy comparison.
+          </p>
+        </div>
+
+        {/* Cards Grid */}
+        <div className="grid gap-8 md:gap-12">
+          {groupedData.map(({ country, provider, models }) => (
+            <div key={`${country}-${provider}`} className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 hover:shadow-2xl transition-all duration-300">
+              {/* Card Header */}
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h2 className="text-2xl font-bold text-white mb-1">{provider}</h2>
+                    <p className="text-blue-100 text-lg">{country}</p>
+                  </div>
+                  <div className="mt-4 md:mt-0">
+                    <span className="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium bg-white/20 text-white backdrop-blur-sm">
+                      {models.length} pricing model{models.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pricing Models */}
+              <div className="p-8">
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+                  {models.map((model) => {
+                    const isEUR = model.currency.trim() === "€" || model.currency.trim().toUpperCase() === "EUR";
+                    const priceInEUR = !isEUR && exchangeRates ? convertToEUR(model.price_kWh, model.currency, exchangeRates).toFixed(2) : null;
+                    const monthlyInEUR = !isEUR && model.monthly_subscription_price && exchangeRates
+                      ? convertToEUR(model.monthly_subscription_price, model.currency, exchangeRates).toFixed(2)
+                      : null;
+                    const yearlyInEUR = !isEUR && model.yearly_subscription_price && exchangeRates
+                      ? convertToEUR(model.yearly_subscription_price, model.currency, exchangeRates).toFixed(2)
+                      : null;
+
+                    const hasSubscription = model.monthly_subscription_price || model.yearly_subscription_price;
+
+                    return (
+                      <div key={model._id} className="bg-gray-50 rounded-xl p-6 border border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 transition-all duration-200">
+                        <h3 className="font-bold text-lg text-gray-900 mb-4 min-h-[2.5rem] flex items-center">
+                          {model.pricing_model_name}
+                        </h3>
+
+                        {/* Per kWh Price */}
+                        <div className="mb-4">
+                          <div className="text-2xl font-bold text-gray-900 mb-1">
+                            {model.currency}{model.price_kWh.toFixed(2)}
+                            <span className="text-sm font-normal text-gray-600 ml-1">/ kWh</span>
+                          </div>
+                          {!isEUR && priceInEUR && (
+                            <div className="text-lg text-blue-600 font-semibold">
+                              €{priceInEUR} / kWh
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Subscription Prices */}
+                        <div className="pt-4 border-t border-gray-200 space-y-3">
+                          {hasSubscription ? (
+                            <>
+                              {model.monthly_subscription_price && (
+                                <div>
+                                  <div className="text-sm text-gray-600 mb-1">Monthly subscription</div>
+                                  <div className="text-lg font-semibold text-gray-900">
+                                    {model.currency}{model.monthly_subscription_price.toFixed(2)}
+                                    <span className="text-sm font-normal text-gray-600">/month</span>
+                                  </div>
+                                  {!isEUR && monthlyInEUR && (
+                                    <div className="text-blue-600 font-medium">
+                                      €{monthlyInEUR}/month
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {model.yearly_subscription_price && (
+                                <div>
+                                  <div className="text-sm text-gray-600 mb-1">Yearly subscription</div>
+                                  <div className="text-lg font-semibold text-gray-900">
+                                    {model.currency}{model.yearly_subscription_price.toFixed(2)}
+                                    <span className="text-sm font-normal text-gray-600">/year</span>
+                                  </div>
+                                  {!isEUR && yearlyInEUR && (
+                                    <div className="text-blue-600 font-medium">
+                                      €{yearlyInEUR}/year
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div>
+                              <div className="text-sm text-gray-600 mb-1">Subscription</div>
+                              <div className="text-gray-500 italic">Free - No subscription required</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                   
-                  return (
-                    <td key={model._id} className="border p-2">
-                      <strong>{model.pricing_model_name}</strong> <br />
-                      <div className="text-sm">
-                        {model.currency}{model.price_kWh.toFixed(2)} / kWh
-                        {model.currency !== "EUR" && priceInEUR && (
-                          <span className="text-gray-600 block">
-                            (€{priceInEUR} / kWh)
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm mt-1">
-                        {model.subscription_price ? (
-                          <>
-                            {model.currency}{model.subscription_price.toFixed(2)}/month
-                            {model.currency !== "EUR" && subscriptionInEUR && (
-                              <span className="text-gray-600 block">
-                                (€{subscriptionInEUR}/month)
-                              </span>
-                            )}
-                          </>
-                        ) : "N/A"}
-                      </div>
-                    </td>
-                  );
-                })}
-                {/* Fill empty cells if less than 4 models */}
-                {Array.from({ length: 4 - models.length }).map((_, index) => (
-                  <td key={`empty-${index}`} className="border p-2 text-gray-400">N/A</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  {/* Fill empty slots for visual consistency */}
+                  {Array.from({ length: 4 - models.length }).map((_, index) => (
+                    <div key={`empty-${index}`} className="bg-gray-50/50 rounded-xl p-6 border border-dashed border-gray-300 flex items-center justify-center min-h-[200px]">
+                      <span className="text-gray-400 text-sm">No additional plans</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="text-center mt-12 pt-8 border-t border-gray-200">
+          <p className="text-gray-600">
+            Prices are updated in real-time. Currency conversions are approximate and for comparison purposes only.
+          </p>
+        </div>
       </div>
     </div>
   );
