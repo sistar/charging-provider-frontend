@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
+import { useEffect, useRef } from "react";
+import * as d3 from "d3";
 
 interface PriceEntry {
   _id: string;
@@ -112,7 +114,18 @@ const convertToEUR = (price: number, currency: string, rates: ExchangeRates): nu
   return price / rate;
 };
 
+interface CountryData {
+  country: string;
+  chargingPrice: number;
+  householdPrice: number;
+  chargingPos: number;
+  householdPos: number;
+}
+
 const PriceComparison: React.FC = () => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
   const { data: pricesData, error: pricesError, isLoading: pricesLoading } = useQuery({
     queryKey: ["prices"],
     queryFn: fetchPrices,
@@ -175,6 +188,201 @@ const PriceComparison: React.FC = () => {
   const paddedMaxHousehold = maxHousehold + householdPadding;
   const paddedRangeHousehold = paddedMaxHousehold - paddedMinHousehold;
 
+  // Prepare country data for D3
+  const countryData: CountryData[] = countriesWithBothPrices.map((country) => {
+    const householdPrice = householdPriceMap.get(country.country) || 0;
+    return {
+      country: country.country,
+      chargingPrice: country.priceEUR,
+      householdPrice,
+      chargingPos: ((country.priceEUR - paddedMin) / paddedRange) * 100,
+      householdPos: ((householdPrice - paddedMinHousehold) / paddedRangeHousehold) * 100,
+    };
+  }).sort((a, b) => a.householdPos - b.householdPos);
+
+  // D3 visualization effect
+  useEffect(() => {
+    if (!svgRef.current || countryData.length === 0) return;
+
+    const svg = d3.select(svgRef.current);
+    svg.selectAll("*").remove(); // Clear previous content
+
+    const width = svgRef.current.clientWidth;
+    const labelSpacing = 22;
+    const labelStartY = 140;
+
+    // Create scales for positioning
+    const xScale = d3.scaleLinear().domain([0, 100]).range([0, width]);
+
+    // Create groups for each country
+    const countryGroups = svg
+      .selectAll<SVGGElement, CountryData>(".country-group")
+      .data(countryData)
+      .join("g")
+      .attr("class", "country-group")
+      .attr("data-country", d => d.country)
+      .style("cursor", "pointer");
+
+    // Main connector lines
+    countryGroups
+      .append("line")
+      .attr("class", "connector-line")
+      .attr("x1", d => xScale(d.chargingPos))
+      .attr("y1", 27)
+      .attr("x2", d => xScale(d.householdPos))
+      .attr("y2", 106)
+      .attr("stroke", "#94a3b8")
+      .attr("stroke-width", 1.5)
+      .attr("opacity", 0.5);
+
+    // Charging dots
+    countryGroups
+      .append("circle")
+      .attr("class", "charging-dot")
+      .attr("cx", d => xScale(d.chargingPos))
+      .attr("cy", 27)
+      .attr("r", 6)
+      .attr("fill", "#ea580c")
+      .attr("stroke", "white")
+      .attr("stroke-width", 2)
+      .style("filter", "drop-shadow(0 1px 2px rgba(0,0,0,0.1))");
+
+    // Household dots
+    countryGroups
+      .append("circle")
+      .attr("class", "household-dot")
+      .attr("cx", d => xScale(d.householdPos))
+      .attr("cy", 106)
+      .attr("r", 6)
+      .attr("fill", "#4f46e5")
+      .attr("stroke", "white")
+      .attr("stroke-width", 2)
+      .style("filter", "drop-shadow(0 1px 2px rgba(0,0,0,0.1))");
+
+    // Label connector lines
+    countryGroups
+      .append("line")
+      .attr("class", "label-connector")
+      .attr("x1", d => xScale((d.chargingPos + d.householdPos) / 2))
+      .attr("y1", 66.5)
+      .attr("x2", d => xScale((d.chargingPos + d.householdPos) / 2))
+      .attr("y2", (_, i) => labelStartY + i * labelSpacing - 5)
+      .attr("stroke", "#94a3b8")
+      .attr("stroke-width", 1)
+      .attr("stroke-dasharray", "2,2")
+      .attr("opacity", 0.4);
+
+    // Labels (using foreignObject)
+    const labels = countryGroups
+      .append("foreignObject")
+      .attr("x", d => xScale((d.chargingPos + d.householdPos) / 2) - 60)
+      .attr("y", (_, i) => labelStartY + i * labelSpacing - 3)
+      .attr("width", 120)
+      .attr("height", 60);
+
+    labels
+      .append("xhtml:div")
+      .attr("class", "label-container")
+      .style("display", "flex")
+      .style("flex-direction", "column")
+      .style("align-items", "center")
+      .html(d => `
+        <div style="background: white; border: 1px solid #d1d5db; border-radius: 4px; padding: 2px 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+          <div style="font-size: 11px; font-weight: 600; color: #1f2937; white-space: nowrap;">${d.country}</div>
+        </div>
+        <div style="font-size: 9px; color: #ea580c; margin-top: 4px;">C: €${d.chargingPrice.toFixed(2)}</div>
+        <div style="font-size: 9px; color: #4f46e5;">H: €${d.householdPrice.toFixed(2)}</div>
+      `);
+
+    // Interactive hover effects
+    countryGroups
+      .on("mouseenter", function(event, d) {
+        // Highlight current country
+        d3.select(this)
+          .select(".connector-line")
+          .attr("stroke", "#2563eb")
+          .attr("stroke-width", 3)
+          .attr("opacity", 1);
+
+        d3.select(this)
+          .select(".charging-dot")
+          .attr("r", 8)
+          .attr("fill", "#dc2626");
+
+        d3.select(this)
+          .select(".household-dot")
+          .attr("r", 8)
+          .attr("fill", "#7c3aed");
+
+        d3.select(this)
+          .select(".label-connector")
+          .attr("stroke", "#2563eb")
+          .attr("stroke-width", 2)
+          .attr("opacity", 0.8);
+
+        // Fade other countries
+        countryGroups
+          .filter(country => country.country !== d.country)
+          .style("opacity", 0.3);
+
+        // Show tooltip
+        if (tooltipRef.current) {
+          const tooltip = d3.select(tooltipRef.current);
+          tooltip
+            .style("display", "block")
+            .style("left", `${event.pageX + 10}px`)
+            .style("top", `${event.pageY - 10}px`)
+            .html(`
+              <div style="font-weight: 600; margin-bottom: 8px; color: #1f2937;">${d.country}</div>
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <div style="width: 12px; height: 12px; background: #ea580c; border-radius: 50%; border: 2px solid white;"></div>
+                <span style="font-size: 12px;">Charging: €${d.chargingPrice.toFixed(3)}/kWh</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="width: 12px; height: 12px; background: #4f46e5; border-radius: 50%; border: 2px solid white;"></div>
+                <span style="font-size: 12px;">Household: €${d.householdPrice.toFixed(3)}/kWh</span>
+              </div>
+              <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 11px; color: #6b7280;">
+                Difference: €${Math.abs(d.chargingPrice - d.householdPrice).toFixed(3)}/kWh
+                (${d.chargingPrice > d.householdPrice ? '+' : ''}${((d.chargingPrice / d.householdPrice - 1) * 100).toFixed(1)}%)
+              </div>
+            `);
+        }
+      })
+      .on("mouseleave", function() {
+        // Reset all styling
+        countryGroups.style("opacity", 1);
+
+        d3.select(this)
+          .select(".connector-line")
+          .attr("stroke", "#94a3b8")
+          .attr("stroke-width", 1.5)
+          .attr("opacity", 0.5);
+
+        d3.select(this)
+          .select(".charging-dot")
+          .attr("r", 6)
+          .attr("fill", "#ea580c");
+
+        d3.select(this)
+          .select(".household-dot")
+          .attr("r", 6)
+          .attr("fill", "#4f46e5");
+
+        d3.select(this)
+          .select(".label-connector")
+          .attr("stroke", "#94a3b8")
+          .attr("stroke-width", 1)
+          .attr("opacity", 0.4);
+
+        // Hide tooltip
+        if (tooltipRef.current) {
+          d3.select(tooltipRef.current).style("display", "none");
+        }
+      });
+
+  }, [countryData]);
+
   return (
     <div className="bg-white rounded-2xl shadow-xl p-8 mb-12 border border-gray-100">
       <div className="mb-8">
@@ -205,107 +413,31 @@ const PriceComparison: React.FC = () => {
             </div>
           </div>
 
-          {/* Country connectors and labels */}
-          <svg className="absolute top-0 left-0 right-0" style={{ height: '600px', width: '100%' }} preserveAspectRatio="none">
-            {(() => {
-              // Calculate all positions and sort by household position for better layout
-              const countryData = countriesWithBothPrices.map((country) => {
-                const chargingPos = ((country.priceEUR - paddedMin) / paddedRange) * 100;
-                const householdPrice = householdPriceMap.get(country.country) || 0;
-                const householdPos = ((householdPrice - paddedMinHousehold) / paddedRangeHousehold) * 100;
-                return {
-                  country: country.country,
-                  chargingPos,
-                  householdPos,
-                  chargingPrice: country.priceEUR,
-                  householdPrice,
-                };
-              }).sort((a, b) => a.householdPos - b.householdPos);
-
-              // Assign label vertical positions with collision detection
-              const labelSpacing = 22; // pixels between labels
-              const labelStartY = 140; // start position for labels
-              const labelPositions: number[] = [];
-
-              countryData.forEach((_, index) => {
-                labelPositions.push(labelStartY + index * labelSpacing);
-              });
-
-              return countryData.map((data, index) => {
-                const labelY = labelPositions[index];
-                const midX = (data.chargingPos + data.householdPos) / 2;
-
-                return (
-                  <g key={data.country}>
-                    {/* Charging price dot */}
-                    <circle
-                      cx={`${data.chargingPos}%`}
-                      cy="27"
-                      r="6"
-                      className="fill-orange-600 stroke-white stroke-2"
-                      style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }}
-                    />
-
-                    {/* Household price dot */}
-                    <circle
-                      cx={`${data.householdPos}%`}
-                      cy="106"
-                      r="6"
-                      className="fill-indigo-600 stroke-white stroke-2"
-                      style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }}
-                    />
-
-                    {/* Main connector line */}
-                    <line
-                      x1={`${data.chargingPos}%`}
-                      y1="27"
-                      x2={`${data.householdPos}%`}
-                      y2="106"
-                      stroke="#94a3b8"
-                      strokeWidth="1.5"
-                      opacity="0.5"
-                    />
-
-                    {/* Label connector line - from midpoint to label */}
-                    <line
-                      x1={`${midX}%`}
-                      y1="66.5"
-                      x2={`${midX}%`}
-                      y2={labelY - 5}
-                      stroke="#94a3b8"
-                      strokeWidth="1"
-                      strokeDasharray="2,2"
-                      opacity="0.4"
-                    />
-
-                    {/* Label background and text */}
-                    <foreignObject
-                      x={`calc(${midX}% - 60px)`}
-                      y={labelY - 3}
-                      width="120"
-                      height="60"
-                    >
-                      <div className="flex flex-col items-center">
-                        <div className="bg-white border border-gray-300 rounded px-2 py-1 shadow-sm">
-                          <div className="text-[11px] font-semibold text-gray-800 whitespace-nowrap">
-                            {data.country}
-                          </div>
-                        </div>
-                        <div className="text-[9px] text-orange-600 mt-1">
-                          C: €{data.chargingPrice.toFixed(2)}
-                        </div>
-                        <div className="text-[9px] text-indigo-600">
-                          H: €{data.householdPrice.toFixed(2)}
-                        </div>
-                      </div>
-                    </foreignObject>
-                  </g>
-                );
-              });
-            })()}
-          </svg>
+          {/* D3 SVG Container */}
+          <svg
+            ref={svgRef}
+            className="absolute top-0 left-0 right-0 w-full"
+            style={{ height: '600px' }}
+          />
         </div>
       </div>
+
+      {/* Tooltip */}
+      <div
+        ref={tooltipRef}
+        style={{
+          position: 'fixed',
+          display: 'none',
+          background: 'white',
+          border: '1px solid #d1d5db',
+          borderRadius: '8px',
+          padding: '12px',
+          boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+          pointerEvents: 'none',
+          zIndex: 1000,
+          maxWidth: '280px',
+        }}
+      />
 
       <div className="mt-6 pt-6 border-t border-gray-200">
         <p className="text-sm text-gray-600 text-center">
