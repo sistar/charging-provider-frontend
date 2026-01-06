@@ -134,10 +134,7 @@ const PriceComparison: React.FC = () => {
     queryFn: fetchHouseholdPrices,
   });
 
-  if (pricesLoading || ratesLoading || householdLoading) return <p className="text-center">Loading comparison...</p>;
-  if (pricesError || ratesError || householdError) return <p className="text-center text-red-500">Error loading data</p>;
-
-  // State to hold calculated data
+  // State to hold calculated data (MUST be before any conditional returns!)
   const [visualizationData, setVisualizationData] = useState<{
     minPrice: number;
     maxPrice: number;
@@ -146,7 +143,7 @@ const PriceComparison: React.FC = () => {
     countryData: CountryData[];
   } | null>(null);
 
-  // Calculate all data in one useEffect, only depending on raw query data
+  // Calculate all data in one useEffect, only depending on raw query data (MUST be before any conditional returns!)
   useEffect(() => {
     if (!pricesData || !exchangeRates || !householdData) return;
 
@@ -396,10 +393,10 @@ const PriceComparison: React.FC = () => {
 
   }, [visualizationData]);
 
-  // Early return if no data
-  if (!visualizationData) {
-    return null;
-  }
+  // Conditional returns AFTER all hooks
+  if (pricesLoading || ratesLoading || householdLoading) return <p className="text-center">Loading comparison...</p>;
+  if (pricesError || ratesError || householdError) return <p className="text-center text-red-500">Error loading data</p>;
+  if (!visualizationData) return null;
 
   const { minPrice, maxPrice, minHousehold, maxHousehold } = visualizationData;
 
