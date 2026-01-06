@@ -273,25 +273,20 @@ const PriceComparison: React.FC = () => {
       .attr("opacity", 0.4);
 
     // Labels (using foreignObject)
-    const labels = countryGroups
+    countryGroups
       .append("foreignObject")
       .attr("x", d => xScale((d.chargingPos + d.householdPos) / 2) - 60)
       .attr("y", (_, i) => labelStartY + i * labelSpacing - 3)
       .attr("width", 120)
-      .attr("height", 60);
-
-    labels
-      .append("xhtml:div")
-      .attr("class", "label-container")
-      .style("display", "flex")
-      .style("flex-direction", "column")
-      .style("align-items", "center")
+      .attr("height", 60)
       .html(d => `
-        <div style="background: white; border: 1px solid #d1d5db; border-radius: 4px; padding: 2px 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-          <div style="font-size: 11px; font-weight: 600; color: #1f2937; white-space: nowrap;">${d.country}</div>
+        <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; flex-direction: column; align-items: center;">
+          <div style="background: white; border: 1px solid #d1d5db; border-radius: 4px; padding: 2px 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+            <div style="font-size: 11px; font-weight: 600; color: #1f2937; white-space: nowrap;">${d.country}</div>
+          </div>
+          <div style="font-size: 9px; color: #ea580c; margin-top: 4px;">C: €${d.chargingPrice.toFixed(2)}</div>
+          <div style="font-size: 9px; color: #4f46e5;">H: €${d.householdPrice.toFixed(2)}</div>
         </div>
-        <div style="font-size: 9px; color: #ea580c; margin-top: 4px;">C: €${d.chargingPrice.toFixed(2)}</div>
-        <div style="font-size: 9px; color: #4f46e5;">H: €${d.householdPrice.toFixed(2)}</div>
       `);
 
     // Interactive hover effects
