@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 
 interface PriceEntry {
@@ -16,13 +16,6 @@ interface PriceEntry {
 
 interface ExchangeRates {
   [key: string]: number;
-}
-
-interface CountryPrice {
-  country: string;
-  priceEUR: number;
-  originalPrice: number;
-  currency: string;
 }
 
 interface HouseholdPrice {
@@ -144,72 +137,66 @@ const PriceComparison: React.FC = () => {
   if (pricesLoading || ratesLoading || householdLoading) return <p className="text-center">Loading comparison...</p>;
   if (pricesError || ratesError || householdError) return <p className="text-center text-red-500">Error loading data</p>;
 
-  // Filter for IONITY Power 365 and convert to EUR (memoized)
-  const power365Prices = useMemo<CountryPrice[]>(() => {
-    return (pricesData || [])
+  // State to hold calculated data
+  const [visualizationData, setVisualizationData] = useState<{
+    minPrice: number;
+    maxPrice: number;
+    minHousehold: number;
+    maxHousehold: number;
+    countryData: CountryData[];
+  } | null>(null);
+
+  // Calculate all data in one useEffect, only depending on raw query data
+  useEffect(() => {
+    if (!pricesData || !exchangeRates || !householdData) return;
+
+    // Filter for IONITY Power 365 and convert to EUR
+    const power365Prices = pricesData
       .filter(p => p.pricing_model_name === "IONITY Power 365")
       .map(p => ({
         country: p.country,
-        priceEUR: exchangeRates ? convertToEUR(p.price_kWh, p.currency, exchangeRates) : p.price_kWh,
+        priceEUR: convertToEUR(p.price_kWh, p.currency, exchangeRates),
         originalPrice: p.price_kWh,
         currency: p.currency
       }))
       .sort((a, b) => a.priceEUR - b.priceEUR);
-  }, [pricesData, exchangeRates]);
 
-  // Calculate price ranges (memoized)
-  const priceRanges = useMemo(() => {
-    if (power365Prices.length === 0) return null;
-    const min = Math.min(...power365Prices.map(p => p.priceEUR));
-    const max = Math.max(...power365Prices.map(p => p.priceEUR));
-    const range = max - min;
-    const padding = range * 0.08;
-    return {
-      minPrice: min,
-      maxPrice: max,
-      paddedMin: min - padding,
-      paddedRange: (max + padding) - (min - padding)
-    };
-  }, [power365Prices]);
+    if (power365Prices.length === 0) {
+      setVisualizationData(null);
+      return;
+    }
 
-  // Create household price lookup (memoized)
-  const householdPriceMap = useMemo(() => {
-    const map = new Map<string, number>();
-    (householdData || []).forEach(h => {
-      map.set(h.country, h.priceEUR);
-    });
-    return map;
-  }, [householdData]);
+    // Create household price lookup
+    const householdPriceMap = new Map<string, number>();
+    householdData.forEach(h => householdPriceMap.set(h.country, h.priceEUR));
 
-  // Filter charging prices to only countries with household data (memoized)
-  const countriesWithBothPrices = useMemo(() => {
-    return power365Prices.filter(p => householdPriceMap.has(p.country));
-  }, [power365Prices, householdPriceMap]);
+    // Filter charging prices to only countries with household data
+    const countriesWithBothPrices = power365Prices.filter(p => householdPriceMap.has(p.country));
 
-  // Calculate household price range (memoized)
-  const householdRanges = useMemo(() => {
-    if (householdPriceMap.size === 0) return null;
+    if (countriesWithBothPrices.length === 0) {
+      setVisualizationData(null);
+      return;
+    }
+
+    // Calculate charging price range
+    const minPrice = Math.min(...power365Prices.map(p => p.priceEUR));
+    const maxPrice = Math.max(...power365Prices.map(p => p.priceEUR));
+    const priceRange = maxPrice - minPrice;
+    const pricePadding = priceRange * 0.08;
+    const paddedMin = minPrice - pricePadding;
+    const paddedRange = (maxPrice + pricePadding) - (minPrice - pricePadding);
+
+    // Calculate household price range
     const householdPrices = Array.from(householdPriceMap.values());
-    const min = Math.min(...householdPrices);
-    const max = Math.max(...householdPrices);
-    const range = max - min;
-    const padding = range * 0.08;
-    return {
-      minHousehold: min,
-      maxHousehold: max,
-      paddedMinHousehold: min - padding,
-      paddedRangeHousehold: (max + padding) - (min - padding)
-    };
-  }, [householdPriceMap]);
+    const minHousehold = Math.min(...householdPrices);
+    const maxHousehold = Math.max(...householdPrices);
+    const householdRange = maxHousehold - minHousehold;
+    const householdPadding = householdRange * 0.08;
+    const paddedMinHousehold = minHousehold - householdPadding;
+    const paddedRangeHousehold = (maxHousehold + householdPadding) - (minHousehold - householdPadding);
 
-  // Prepare country data for D3 (memoized to prevent infinite re-renders)
-  const countryData = useMemo(() => {
-    if (!priceRanges || !householdRanges) return [];
-
-    const { paddedMin, paddedRange } = priceRanges;
-    const { paddedMinHousehold, paddedRangeHousehold } = householdRanges;
-
-    return countriesWithBothPrices.map((country) => {
+    // Prepare country data
+    const countryData = countriesWithBothPrices.map((country) => {
       const householdPrice = householdPriceMap.get(country.country) || 0;
       return {
         country: country.country,
@@ -219,19 +206,21 @@ const PriceComparison: React.FC = () => {
         householdPos: ((householdPrice - paddedMinHousehold) / paddedRangeHousehold) * 100,
       };
     }).sort((a, b) => a.householdPos - b.householdPos);
-  }, [countriesWithBothPrices, householdPriceMap, priceRanges, householdRanges]);
 
-  // Track previous data to prevent unnecessary re-renders
-  const prevCountryDataRef = useRef<string>('');
+    setVisualizationData({
+      minPrice,
+      maxPrice,
+      minHousehold,
+      maxHousehold,
+      countryData
+    });
+  }, [pricesData, exchangeRates, householdData]);
 
   // D3 visualization effect
   useEffect(() => {
-    if (!svgRef.current || !countryData || countryData.length === 0) return;
+    if (!svgRef.current || !visualizationData) return;
 
-    // Check if data actually changed
-    const currentDataStr = JSON.stringify(countryData);
-    if (currentDataStr === prevCountryDataRef.current) return;
-    prevCountryDataRef.current = currentDataStr;
+    const { countryData } = visualizationData;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove(); // Clear previous content
@@ -405,15 +394,14 @@ const PriceComparison: React.FC = () => {
         }
       });
 
-  }, [countryData]);
+  }, [visualizationData]);
 
   // Early return if no data
-  if (!priceRanges || !householdRanges || countryData.length === 0) {
+  if (!visualizationData) {
     return null;
   }
 
-  const { minPrice, maxPrice } = priceRanges;
-  const { minHousehold, maxHousehold } = householdRanges;
+  const { minPrice, maxPrice, minHousehold, maxHousehold } = visualizationData;
 
   return (
     <div className="bg-white rounded-2xl shadow-xl p-8 mb-12 border border-gray-100">
@@ -473,7 +461,7 @@ const PriceComparison: React.FC = () => {
 
       <div className="mt-6 pt-6 border-t border-gray-200">
         <p className="text-sm text-gray-600 text-center">
-          Showing {countriesWithBothPrices.length} countries with both charging and household electricity pricing data
+          Showing {visualizationData.countryData.length} countries with both charging and household electricity pricing data
         </p>
         <p className="text-xs text-gray-500 text-center mt-2">
           C = Charging price (IONITY Power 365) · H = Household electricity price · Lines show correlation between the two
