@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo } from "react";
 import * as d3 from "d3";
 
 interface PriceEntry {
@@ -144,61 +144,79 @@ const PriceComparison: React.FC = () => {
   if (pricesLoading || ratesLoading || householdLoading) return <p className="text-center">Loading comparison...</p>;
   if (pricesError || ratesError || householdError) return <p className="text-center text-red-500">Error loading data</p>;
 
-  // Filter for IONITY Power 365 and convert to EUR
-  const power365Prices: CountryPrice[] = (pricesData || [])
-    .filter(p => p.pricing_model_name === "IONITY Power 365")
-    .map(p => ({
-      country: p.country,
-      priceEUR: exchangeRates ? convertToEUR(p.price_kWh, p.currency, exchangeRates) : p.price_kWh,
-      originalPrice: p.price_kWh,
-      currency: p.currency
-    }))
-    .sort((a, b) => a.priceEUR - b.priceEUR);
+  // Filter for IONITY Power 365 and convert to EUR (memoized)
+  const power365Prices = useMemo<CountryPrice[]>(() => {
+    return (pricesData || [])
+      .filter(p => p.pricing_model_name === "IONITY Power 365")
+      .map(p => ({
+        country: p.country,
+        priceEUR: exchangeRates ? convertToEUR(p.price_kWh, p.currency, exchangeRates) : p.price_kWh,
+        originalPrice: p.price_kWh,
+        currency: p.currency
+      }))
+      .sort((a, b) => a.priceEUR - b.priceEUR);
+  }, [pricesData, exchangeRates]);
 
   if (power365Prices.length === 0) {
     return null;
   }
 
-  const minPrice = Math.min(...power365Prices.map(p => p.priceEUR));
-  const maxPrice = Math.max(...power365Prices.map(p => p.priceEUR));
-  const priceRange = maxPrice - minPrice;
-
-  // Add 8% padding on each side so min/max prices aren't at the edges
-  const padding = priceRange * 0.08;
-  const paddedMin = minPrice - padding;
-  const paddedMax = maxPrice + padding;
-  const paddedRange = paddedMax - paddedMin;
-
-  // Create household price lookup
-  const householdPriceMap = new Map<string, number>();
-  (householdData || []).forEach(h => {
-    householdPriceMap.set(h.country, h.priceEUR);
-  });
-
-  // Filter charging prices to only countries with household data
-  const countriesWithBothPrices = power365Prices.filter(p => householdPriceMap.has(p.country));
-
-  // Calculate household price range
-  const householdPrices = Array.from(householdPriceMap.values());
-  const minHousehold = Math.min(...householdPrices);
-  const maxHousehold = Math.max(...householdPrices);
-  const householdRange = maxHousehold - minHousehold;
-  const householdPadding = householdRange * 0.08;
-  const paddedMinHousehold = minHousehold - householdPadding;
-  const paddedMaxHousehold = maxHousehold + householdPadding;
-  const paddedRangeHousehold = paddedMaxHousehold - paddedMinHousehold;
-
-  // Prepare country data for D3
-  const countryData: CountryData[] = countriesWithBothPrices.map((country) => {
-    const householdPrice = householdPriceMap.get(country.country) || 0;
+  // Calculate price ranges (memoized)
+  const { minPrice, maxPrice, paddedMin, paddedRange } = useMemo(() => {
+    const min = Math.min(...power365Prices.map(p => p.priceEUR));
+    const max = Math.max(...power365Prices.map(p => p.priceEUR));
+    const range = max - min;
+    const padding = range * 0.08;
     return {
-      country: country.country,
-      chargingPrice: country.priceEUR,
-      householdPrice,
-      chargingPos: ((country.priceEUR - paddedMin) / paddedRange) * 100,
-      householdPos: ((householdPrice - paddedMinHousehold) / paddedRangeHousehold) * 100,
+      minPrice: min,
+      maxPrice: max,
+      paddedMin: min - padding,
+      paddedRange: (max + padding) - (min - padding)
     };
-  }).sort((a, b) => a.householdPos - b.householdPos);
+  }, [power365Prices]);
+
+  // Create household price lookup (memoized)
+  const householdPriceMap = useMemo(() => {
+    const map = new Map<string, number>();
+    (householdData || []).forEach(h => {
+      map.set(h.country, h.priceEUR);
+    });
+    return map;
+  }, [householdData]);
+
+  // Filter charging prices to only countries with household data (memoized)
+  const countriesWithBothPrices = useMemo(() => {
+    return power365Prices.filter(p => householdPriceMap.has(p.country));
+  }, [power365Prices, householdPriceMap]);
+
+  // Calculate household price range (memoized)
+  const { minHousehold, maxHousehold, paddedMinHousehold, paddedRangeHousehold } = useMemo(() => {
+    const householdPrices = Array.from(householdPriceMap.values());
+    const min = Math.min(...householdPrices);
+    const max = Math.max(...householdPrices);
+    const range = max - min;
+    const padding = range * 0.08;
+    return {
+      minHousehold: min,
+      maxHousehold: max,
+      paddedMinHousehold: min - padding,
+      paddedRangeHousehold: (max + padding) - (min - padding)
+    };
+  }, [householdPriceMap]);
+
+  // Prepare country data for D3 (memoized to prevent infinite re-renders)
+  const countryData = useMemo(() => {
+    return countriesWithBothPrices.map((country) => {
+      const householdPrice = householdPriceMap.get(country.country) || 0;
+      return {
+        country: country.country,
+        chargingPrice: country.priceEUR,
+        householdPrice,
+        chargingPos: ((country.priceEUR - paddedMin) / paddedRange) * 100,
+        householdPos: ((householdPrice - paddedMinHousehold) / paddedRangeHousehold) * 100,
+      };
+    }).sort((a, b) => a.householdPos - b.householdPos);
+  }, [countriesWithBothPrices, householdPriceMap, paddedMin, paddedRange, paddedMinHousehold, paddedRangeHousehold]);
 
   // D3 visualization effect
   useEffect(() => {
