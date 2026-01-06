@@ -221,9 +221,17 @@ const PriceComparison: React.FC = () => {
     }).sort((a, b) => a.householdPos - b.householdPos);
   }, [countriesWithBothPrices, householdPriceMap, priceRanges, householdRanges]);
 
+  // Track previous data to prevent unnecessary re-renders
+  const prevCountryDataRef = useRef<string>('');
+
   // D3 visualization effect
   useEffect(() => {
-    if (!svgRef.current || countryData.length === 0) return;
+    if (!svgRef.current || !countryData || countryData.length === 0) return;
+
+    // Check if data actually changed
+    const currentDataStr = JSON.stringify(countryData);
+    if (currentDataStr === prevCountryDataRef.current) return;
+    prevCountryDataRef.current = currentDataStr;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove(); // Clear previous content
