@@ -157,12 +157,9 @@ const PriceComparison: React.FC = () => {
       .sort((a, b) => a.priceEUR - b.priceEUR);
   }, [pricesData, exchangeRates]);
 
-  if (power365Prices.length === 0) {
-    return null;
-  }
-
   // Calculate price ranges (memoized)
-  const { minPrice, maxPrice, paddedMin, paddedRange } = useMemo(() => {
+  const priceRanges = useMemo(() => {
+    if (power365Prices.length === 0) return null;
     const min = Math.min(...power365Prices.map(p => p.priceEUR));
     const max = Math.max(...power365Prices.map(p => p.priceEUR));
     const range = max - min;
@@ -190,7 +187,8 @@ const PriceComparison: React.FC = () => {
   }, [power365Prices, householdPriceMap]);
 
   // Calculate household price range (memoized)
-  const { minHousehold, maxHousehold, paddedMinHousehold, paddedRangeHousehold } = useMemo(() => {
+  const householdRanges = useMemo(() => {
+    if (householdPriceMap.size === 0) return null;
     const householdPrices = Array.from(householdPriceMap.values());
     const min = Math.min(...householdPrices);
     const max = Math.max(...householdPrices);
@@ -206,6 +204,11 @@ const PriceComparison: React.FC = () => {
 
   // Prepare country data for D3 (memoized to prevent infinite re-renders)
   const countryData = useMemo(() => {
+    if (!priceRanges || !householdRanges) return [];
+
+    const { paddedMin, paddedRange } = priceRanges;
+    const { paddedMinHousehold, paddedRangeHousehold } = householdRanges;
+
     return countriesWithBothPrices.map((country) => {
       const householdPrice = householdPriceMap.get(country.country) || 0;
       return {
@@ -216,7 +219,7 @@ const PriceComparison: React.FC = () => {
         householdPos: ((householdPrice - paddedMinHousehold) / paddedRangeHousehold) * 100,
       };
     }).sort((a, b) => a.householdPos - b.householdPos);
-  }, [countriesWithBothPrices, householdPriceMap, paddedMin, paddedRange, paddedMinHousehold, paddedRangeHousehold]);
+  }, [countriesWithBothPrices, householdPriceMap, priceRanges, householdRanges]);
 
   // D3 visualization effect
   useEffect(() => {
@@ -395,6 +398,14 @@ const PriceComparison: React.FC = () => {
       });
 
   }, [countryData]);
+
+  // Early return if no data
+  if (!priceRanges || !householdRanges || countryData.length === 0) {
+    return null;
+  }
+
+  const { minPrice, maxPrice } = priceRanges;
+  const { minHousehold, maxHousehold } = householdRanges;
 
   return (
     <div className="bg-white rounded-2xl shadow-xl p-8 mb-12 border border-gray-100">
