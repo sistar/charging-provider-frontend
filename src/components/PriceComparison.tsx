@@ -184,7 +184,7 @@ const PriceComparison: React.FC = () => {
 
       <div className="relative py-8">
         {/* Dual-bar visualization */}
-        <div className="relative" style={{ minHeight: '350px' }}>
+        <div className="relative" style={{ minHeight: '600px' }}>
           {/* Charging price bar (top) */}
           <div className="mb-6">
             <div className="text-sm font-semibold text-gray-700 mb-2">IONITY Power 365 Charging Price</div>
@@ -205,77 +205,105 @@ const PriceComparison: React.FC = () => {
             </div>
           </div>
 
-          {/* Country connectors */}
-          <div className="absolute top-0 left-0 right-0" style={{ height: '180px' }}>
-            {countriesWithBothPrices.map((country) => {
-              const chargingPos = ((country.priceEUR - paddedMin) / paddedRange) * 100;
-              const householdPrice = householdPriceMap.get(country.country) || 0;
-              const householdPos = ((householdPrice - paddedMinHousehold) / paddedRangeHousehold) * 100;
+          {/* Country connectors and labels */}
+          <svg className="absolute top-0 left-0 right-0" style={{ height: '600px', width: '100%' }} preserveAspectRatio="none">
+            {(() => {
+              // Calculate all positions and sort by household position for better layout
+              const countryData = countriesWithBothPrices.map((country) => {
+                const chargingPos = ((country.priceEUR - paddedMin) / paddedRange) * 100;
+                const householdPrice = householdPriceMap.get(country.country) || 0;
+                const householdPos = ((householdPrice - paddedMinHousehold) / paddedRangeHousehold) * 100;
+                return {
+                  country: country.country,
+                  chargingPos,
+                  householdPos,
+                  chargingPrice: country.priceEUR,
+                  householdPrice,
+                };
+              }).sort((a, b) => a.householdPos - b.householdPos);
 
-              return (
-                <div key={country.country}>
-                  {/* Charging price dot */}
-                  <div
-                    className="absolute w-3 h-3 bg-orange-600 rounded-full border-2 border-white shadow-sm"
-                    style={{
-                      left: `${chargingPos}%`,
-                      top: '27px',
-                      transform: 'translateX(-50%)',
-                      zIndex: 20
-                    }}
-                  ></div>
+              // Assign label vertical positions with collision detection
+              const labelSpacing = 22; // pixels between labels
+              const labelStartY = 140; // start position for labels
+              const labelPositions: number[] = [];
 
-                  {/* Household price dot */}
-                  <div
-                    className="absolute w-3 h-3 bg-indigo-600 rounded-full border-2 border-white shadow-sm"
-                    style={{
-                      left: `${householdPos}%`,
-                      top: '106px',
-                      transform: 'translateX(-50%)',
-                      zIndex: 20
-                    }}
-                  ></div>
+              countryData.forEach((_, index) => {
+                labelPositions.push(labelStartY + index * labelSpacing);
+              });
 
-                  {/* Connector line */}
-                  <svg
-                    className="absolute pointer-events-none"
-                    style={{
-                      left: 0,
-                      top: 0,
-                      width: '100%',
-                      height: '180px',
-                      zIndex: 10
-                    }}
-                  >
+              return countryData.map((data, index) => {
+                const labelY = labelPositions[index];
+                const midX = (data.chargingPos + data.householdPos) / 2;
+
+                return (
+                  <g key={data.country}>
+                    {/* Charging price dot */}
+                    <circle
+                      cx={`${data.chargingPos}%`}
+                      cy="27"
+                      r="6"
+                      className="fill-orange-600 stroke-white stroke-2"
+                      style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }}
+                    />
+
+                    {/* Household price dot */}
+                    <circle
+                      cx={`${data.householdPos}%`}
+                      cy="106"
+                      r="6"
+                      className="fill-indigo-600 stroke-white stroke-2"
+                      style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.1))' }}
+                    />
+
+                    {/* Main connector line */}
                     <line
-                      x1={`${chargingPos}%`}
+                      x1={`${data.chargingPos}%`}
                       y1="27"
-                      x2={`${householdPos}%`}
+                      x2={`${data.householdPos}%`}
                       y2="106"
-                      stroke="#cbd5e1"
+                      stroke="#94a3b8"
+                      strokeWidth="1.5"
+                      opacity="0.5"
+                    />
+
+                    {/* Label connector line - from midpoint to label */}
+                    <line
+                      x1={`${midX}%`}
+                      y1="66.5"
+                      x2={`${midX}%`}
+                      y2={labelY - 5}
+                      stroke="#94a3b8"
                       strokeWidth="1"
+                      strokeDasharray="2,2"
                       opacity="0.4"
                     />
-                  </svg>
 
-                  {/* Country label */}
-                  <div
-                    className="absolute whitespace-nowrap text-center"
-                    style={{
-                      left: `${(chargingPos + householdPos) / 2}%`,
-                      top: '140px',
-                      transform: 'translateX(-50%)',
-                      width: '100px'
-                    }}
-                  >
-                    <div className="text-[10px] font-semibold text-gray-700">{country.country}</div>
-                    <div className="text-[9px] text-orange-600">C: €{country.priceEUR.toFixed(2)}</div>
-                    <div className="text-[9px] text-indigo-600">H: €{householdPrice.toFixed(2)}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                    {/* Label background and text */}
+                    <foreignObject
+                      x={`calc(${midX}% - 60px)`}
+                      y={labelY - 3}
+                      width="120"
+                      height="60"
+                    >
+                      <div className="flex flex-col items-center">
+                        <div className="bg-white border border-gray-300 rounded px-2 py-1 shadow-sm">
+                          <div className="text-[11px] font-semibold text-gray-800 whitespace-nowrap">
+                            {data.country}
+                          </div>
+                        </div>
+                        <div className="text-[9px] text-orange-600 mt-1">
+                          C: €{data.chargingPrice.toFixed(2)}
+                        </div>
+                        <div className="text-[9px] text-indigo-600">
+                          H: €{data.householdPrice.toFixed(2)}
+                        </div>
+                      </div>
+                    </foreignObject>
+                  </g>
+                );
+              });
+            })()}
+          </svg>
         </div>
       </div>
 
